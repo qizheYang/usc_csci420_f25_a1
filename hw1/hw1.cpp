@@ -76,6 +76,9 @@ VBO vboVertices;
 VBO vboColors;
 VAO vao;
 
+// pipeline for smooth
+// PipelineProgram pipelineProgramSmooth;
+
 // additional global variables
 int renderMode = 1; // 1=points, 2=lines, 
                     // 3=triangles, 4=smoothing
@@ -84,6 +87,7 @@ float exponent = 1.0f;
 
 // counters
 int numPoints, numLines, numTriangles;
+int numTriangleVertices;
 
 // additional VAOs and VBOs
 VAO vaoPoints, vaoLines, vaoTriangles;
@@ -94,6 +98,9 @@ VBO vboTrianglesPos, vboTrianglesColor;
 VAO vaoSmooth;
 VBO vboCenter, vboLeft, vboRight, 
     vboUp, vboDown, vboColor;
+// VBO vboSmoothPos, vboSmoothColor, vboSmoothNormal;
+
+int numSmoothVerts;
 
 // gamer control helper
 bool keyStates[256] = { false }; // true if key is pressed
@@ -197,11 +204,12 @@ void mouseMotionDragFunc(int x, int y)
   {
     // translate the terrain
     case TRANSLATE:
-      if (leftMouseButton)
+      if (middleMouseButton)
       {
         // control x,y translation via the left mouse button
         terrainTranslate[0] += mousePosDelta[0] * 0.01f;
         terrainTranslate[1] -= mousePosDelta[1] * 0.01f;
+        cout << "[ACTION] Translating" << endl;
       }
       break;
 
@@ -212,18 +220,17 @@ void mouseMotionDragFunc(int x, int y)
         // control x,y rotation via the left mouse button
         terrainRotate[0] += mousePosDelta[1];
         terrainRotate[1] += mousePosDelta[0];
-      }
-      if (middleMouseButton)
-      {
-        // control z rotation via the middle mouse button
-        terrainRotate[2] += mousePosDelta[1];
+        cout << "[ACTION] Rotating" << endl;
       }
       break;
 
     // scale the terrain
     case SCALE:
-      if (leftMouseButton) {
-        terrainTranslate[2] += mousePosDelta[1] * 0.01f;
+      if (rightMouseButton) {
+        terrainScale[0] += mousePosDelta[1] * 0.01f;
+        terrainScale[1] += mousePosDelta[1] * 0.01f;
+        terrainScale[2] += mousePosDelta[1] * 0.01f;
+        cout << "[ACTION] Scaling" << endl;
       }
       break;
   }
@@ -243,45 +250,40 @@ void mouseMotionFunc(int x, int y)
 
 void mouseButtonFunc(int button, int state, int x, int y)
 {
-  // A mouse button has has been pressed or depressed.
+  // A mouse button has been pressed or released.
 
-  // Keep track of the mouse button state, in leftMouseButton, middleMouseButton, rightMouseButton variables.
   switch (button)
   {
     case GLUT_LEFT_BUTTON:
       leftMouseButton = (state == GLUT_DOWN);
-    break;
+      cout << "[INPUT] LEFT BUTTON" << endl;
+      controlState = ROTATE;
+      break;
 
     case GLUT_MIDDLE_BUTTON:
       middleMouseButton = (state == GLUT_DOWN);
-    break;
+      cout << "[INPUT] MIDDLE BUTTON" << endl;
+      controlState = TRANSLATE;
+      break;
 
     case GLUT_RIGHT_BUTTON:
       rightMouseButton = (state == GLUT_DOWN);
-    break;
+      cout << "[INPUT] RIGHT BUTTON" << endl;
+      controlState = SCALE;
+      break;
 
-    case 3: // mouse wheel up
-      terrainTranslate[2] -= 0.1f;
-    break;
+    // case 3: // mouse wheel up
+    //   terrainTranslate[2] -= 0.1f; // zoom in
+    //   cout << "[INPUT] MOUSE WHEEL UP" << endl;
+    //   break;
 
-    case 4: // mouse wheel down
-      terrainTranslate[2] += 0.1f;
-    break;
+    // case 4: // mouse wheel down
+    //   terrainTranslate[2] += 0.1f; // zoom out
+    //   cout << "[INPUT] MOUSE WHEEL DOWN" << endl;
+    //   break;
   }
 
-  // new control logic just like Maya
-  int modifiers = glutGetModifiers();
-  if (modifiers & GLUT_ACTIVE_ALT) {
-    controlState = TRANSLATE;
-  }
-  else if (modifiers & GLUT_ACTIVE_CTRL) {
-    controlState = SCALE;
-  }
-  else {
-    controlState = ROTATE;
-  }
-
-  // Store the new mouse position.
+  // Store the new mouse position for drag calculations.
   mousePos[0] = x;
   mousePos[1] = y;
 }
@@ -293,13 +295,30 @@ void keyboardDownFunc(unsigned char key, int x, int y)
   keyStates[key] = true;
 
   if (key == 27) exit(0); // key esc
-  if (key == 'x') saveScreenshot();
+  if (key == 'x') {
+    saveScreenshot();
+    cout << "[SCREENSHOT] at time " 
+         << getCurrentTime("%H%M%S_") 
+         << endl;
+  }
 
   // display mode switching
-  if (key == '1') renderMode = 1; // points
-  if (key == '2') renderMode = 2; // lines
-  if (key == '3') renderMode = 3; // triangles
-  if (key == '4') renderMode = 4; // smoothing
+  if (key == '1') {
+    renderMode = 1;
+    cout << "[RENDER MODE] " << key << endl;
+  }; // points
+  if (key == '2') {
+    renderMode = 2;
+    cout << "[RENDER MODE] " << key << endl;
+  } // lines
+  if (key == '3') {
+    renderMode = 3;
+    cout << "[RENDER MODE] " << key << endl;
+  } // triangles
+  if (key == '4') {
+    renderMode = 4;
+    cout << "[RENDER MODE] " << key << endl;
+  } // smoothing
 
   // reset everything
   if (key == 't') {
@@ -315,13 +334,187 @@ void keyboardDownFunc(unsigned char key, int x, int y)
     terrainScale[1] = 5.0f;
     terrainScale[2] = 5.0f;
 
-    cout << "Reset transformations." << endl;
+    cout << "[DISPLAY] Reset" << endl;
   }
 }
 
 void keyboardUpFunc(unsigned char key, int x, int y)
 {
   keyStates[key] = false;
+}
+
+void buildPoints(ImageIO *heightmapImage, int width, int height, float heightScale)
+{
+  numPoints = width * height;
+
+  vector<float> positions;
+  vector<float> colors;
+  positions.reserve(numPoints * 3);
+  colors.reserve(numPoints * 4);
+
+  for (int i = 0; i < height; i++) {
+    for (int j = 0; j < width; j++) {
+      float h = heightmapImage->getPixel(j, i, 0);
+
+      positions.push_back((float)i / height - 0.5f);
+      positions.push_back(h * heightScale);
+      positions.push_back(-(float)j / width - 0.5f);
+
+      float gray = h / 255.0f;
+      colors.insert(colors.end(), { gray, gray, gray, 1.0f });
+    }
+  }
+
+  vboPointsPos.Gen(numPoints, 3, positions.data(), GL_STATIC_DRAW);
+  vboPointsColor.Gen(numPoints, 4, colors.data(), GL_STATIC_DRAW);
+  vaoPoints.Gen();
+  vaoPoints.Bind();
+  vaoPoints.ConnectPipelineProgramAndVBOAndShaderVariable(&pipelineProgram, &vboPointsPos, "position");
+  vaoPoints.ConnectPipelineProgramAndVBOAndShaderVariable(&pipelineProgram, &vboPointsColor, "color");
+}
+
+void buildLines(ImageIO *heightmapImage, int width, int height, float heightScale)
+{
+  vector<float> positions;
+  vector<float> colors;
+
+  for (int i = 0; i < height; i++) {
+    for (int j = 0; j < width; j++) {
+      float h = heightmapImage->getPixel(j, i, 0);
+      float y = h * heightScale;
+      float x = (float)i / height - 0.5f;
+      float z = -(float)j / width - 0.5f;
+      float gray = h / 255.0f;
+
+      if (j + 1 < width) {
+        float h2 = heightmapImage->getPixel(j + 1, i, 0);
+        float y2 = h2 * heightScale;
+        float z2 = -(float)(j + 1) / width - 0.5f;
+
+        positions.insert(positions.end(), { x, y, z, x, y2, z2 });
+        colors.insert(colors.end(), { gray, gray, gray, 1.0f,
+                                      h2/255.0f, h2/255.0f, h2/255.0f, 1.0f });
+      }
+
+      if (i + 1 < height) {
+        float h2 = heightmapImage->getPixel(j, i + 1, 0);
+        float y2 = h2 * heightScale;
+        float x2 = (float)(i + 1) / height - 0.5f;
+
+        positions.insert(positions.end(), { x, y, z, x2, y2, z });
+        colors.insert(colors.end(), { gray, gray, gray, 1.0f,
+                                      h2/255.0f, h2/255.0f, h2/255.0f, 1.0f });
+      }
+    }
+  }
+
+  numLines = positions.size() / 3;
+
+  vboLinesPos.Gen(numLines, 3, positions.data(), GL_STATIC_DRAW);
+  vboLinesColor.Gen(numLines, 4, colors.data(), GL_STATIC_DRAW);
+  vaoLines.Gen();
+  vaoLines.Bind();
+  vaoLines.ConnectPipelineProgramAndVBOAndShaderVariable(&pipelineProgram, &vboLinesPos, "position");
+  vaoLines.ConnectPipelineProgramAndVBOAndShaderVariable(&pipelineProgram, &vboLinesColor, "color");
+}
+
+void buildTriangles(ImageIO *heightmapImage, int width, int height, float heightScale)
+{
+  vector<float> positions;
+  vector<float> colors;
+
+  for (int i = 0; i < height - 1; i++) {
+    for (int j = 0; j < width - 1; j++) {
+      float h00 = heightmapImage->getPixel(j, i, 0);
+      float h01 = heightmapImage->getPixel(j + 1, i, 0);
+      float h10 = heightmapImage->getPixel(j, i + 1, 0);
+      float h11 = heightmapImage->getPixel(j + 1, i + 1, 0);
+
+      float x00 = (float)i / height - 0.5f, y00 = h00 * heightScale, z00 = -(float)j / width - 0.5f;
+      float x01 = (float)i / height - 0.5f, y01 = h01 * heightScale, z01 = -(float)(j + 1) / width - 0.5f;
+      float x10 = (float)(i + 1) / height - 0.5f, y10 = h10 * heightScale, z10 = -(float)j / width - 0.5f;
+      float x11 = (float)(i + 1) / height - 0.5f, y11 = h11 * heightScale, z11 = -(float)(j + 1) / width - 0.5f;
+
+      float g00 = h00 / 255.0f, g01 = h01 / 255.0f, g10 = h10 / 255.0f, g11 = h11 / 255.0f;
+
+      // triangle 1
+      positions.insert(positions.end(), { x00,y00,z00, x10,y10,z10, x01,y01,z01 });
+      colors.insert(colors.end(), { g00,g00,g00,1.0f, g10,g10,g10,1.0f, g01,g01,g01,1.0f });
+
+      // triangle 2
+      positions.insert(positions.end(), { x10,y10,z10, x11,y11,z11, x01,y01,z01 });
+      colors.insert(colors.end(), { g10,g10,g10,1.0f, g11,g11,g11,1.0f, g01,g01,g01,1.0f });
+    }
+  }
+
+  numTriangleVertices = positions.size() / 3;
+
+  vboTrianglesPos.Gen(numTriangleVertices, 3, positions.data(), GL_STATIC_DRAW);
+  vboTrianglesColor.Gen(numTriangleVertices, 4, colors.data(), GL_STATIC_DRAW);
+  vaoTriangles.Gen();
+  vaoTriangles.Bind();
+  vaoTriangles.ConnectPipelineProgramAndVBOAndShaderVariable(&pipelineProgram, &vboTrianglesPos, "position");
+  vaoTriangles.ConnectPipelineProgramAndVBOAndShaderVariable(&pipelineProgram, &vboTrianglesColor, "color");
+}
+
+void buildSmoothSurface(ImageIO *image, int width, int height, float heightScale)
+{
+  vector<float> centers, lefts, rights, ups, downs, colors;
+
+  for (int i = 0; i < height; i++) {
+    for (int j = 0; j < width; j++) {
+      float h = image->getPixel(j, i, 0);
+      float y = h * heightScale;
+      float x = (float)i / height - 0.5f;
+      float z = -(float)j / width - 0.5f;
+      float gray = h / 255.0f;
+
+      // Current vertex
+      centers.insert(centers.end(), { x, y, z });
+      colors.insert(colors.end(), { gray, gray, gray, 1.0f });
+
+      // Neighbor function
+      auto neighbor = [&](int ni, int nj) {
+        ni = std::max(0, std::min(height - 1, ni));
+        nj = std::max(0, std::min(width - 1, nj));
+        float nh = image->getPixel(nj, ni, 0);
+        return vector<float>{
+          (float)ni / height - 0.5f,
+          nh * heightScale,
+          -(float)nj / width - 0.5f
+        };
+      };
+
+      auto L = neighbor(i, j - 1);
+      auto R = neighbor(i, j + 1);
+      auto U = neighbor(i - 1, j);
+      auto D = neighbor(i + 1, j);
+
+      lefts.insert(lefts.end(), L.begin(), L.end());
+      rights.insert(rights.end(), R.begin(), R.end());
+      ups.insert(ups.end(), U.begin(), U.end());
+      downs.insert(downs.end(), D.begin(), D.end());
+    }
+  }
+
+  numSmoothVerts = centers.size() / 3;
+
+  // Upload to GPU
+  vboCenter.Gen(numSmoothVerts, 3, centers.data(), GL_STATIC_DRAW);
+  vboLeft.Gen(numSmoothVerts, 3, lefts.data(), GL_STATIC_DRAW);
+  vboRight.Gen(numSmoothVerts, 3, rights.data(), GL_STATIC_DRAW);
+  vboUp.Gen(numSmoothVerts, 3, ups.data(), GL_STATIC_DRAW);
+  vboDown.Gen(numSmoothVerts, 3, downs.data(), GL_STATIC_DRAW);
+  vboColor.Gen(numSmoothVerts, 4, colors.data(), GL_STATIC_DRAW);
+
+  vaoSmooth.Gen();
+  vaoSmooth.Bind();
+  vaoSmooth.ConnectPipelineProgramAndVBOAndShaderVariable(&pipelineProgram, &vboCenter, "center");
+  vaoSmooth.ConnectPipelineProgramAndVBOAndShaderVariable(&pipelineProgram, &vboLeft, "left");
+  vaoSmooth.ConnectPipelineProgramAndVBOAndShaderVariable(&pipelineProgram, &vboRight, "right");
+  vaoSmooth.ConnectPipelineProgramAndVBOAndShaderVariable(&pipelineProgram, &vboUp, "up");
+  vaoSmooth.ConnectPipelineProgramAndVBOAndShaderVariable(&pipelineProgram, &vboDown, "down");
+  vaoSmooth.ConnectPipelineProgramAndVBOAndShaderVariable(&pipelineProgram, &vboColor, "color");
 }
 
 void displayFunc()
@@ -375,10 +568,10 @@ void displayFunc()
     glDrawArrays(GL_LINES, 0, numLines);
   } else if (renderMode == 3) {
     vaoTriangles.Bind();
-    glDrawArrays(GL_TRIANGLES, 0, numTriangles);
+    glDrawArrays(GL_TRIANGLES, 0, numTriangleVertices);
   } else if (renderMode == 4) {
     vaoSmooth.Bind();
-    glDrawArrays(GL_TRIANGLES, 0, numTriangles * 3); // temp
+    glDrawArrays(GL_TRIANGLES, 0, numSmoothVerts);
   }
 
   // Swap the double-buffers.
@@ -413,7 +606,14 @@ void initScene(int argc, char *argv[])
     throw 1;
   } 
   cout << "Successfully built the pipeline program." << endl;
-    
+  
+  // if (pipelineProgramSmooth.BuildShadersFromFiles(shaderBasePath, "vertexShader_smooth.glsl", "fragmentShader_smooth.glsl") != 0)
+  // {
+  //   cout << "Failed to build the smooth-shading pipeline program." << endl;
+  //   throw 1;
+  // }
+  // cout << "Successfully built the smooth-shading pipeline program." << endl;
+
   // Bind the pipeline program that we just created. 
   // The purpose of binding a pipeline program is to activate the shaders that it contains, i.e.,
   // any object rendered from that point on, will use those shaders.
@@ -427,167 +627,14 @@ void initScene(int argc, char *argv[])
   // new code
   int width = heightmapImage->getWidth();
   int height = heightmapImage->getHeight();
-
-  // POINTS aka VERTICES
-
-  numPoints = width * height;
-
-  vector<float> pointPositions;
-  vector<float> pointColors;
-  pointPositions.reserve(numPoints * 3);
-  pointColors.reserve(numPoints * 4);
-
   float heightScale = 0.5f / 255.0f;
 
-  for (int i = 0; i < height; i++) {
-    for (int j = 0; j < width; j++) {
-      float h = heightmapImage->getPixel(j, i, 0);
+  buildPoints(heightmapImage.get(), width, height, heightScale);
+  buildLines(heightmapImage.get(), width, height, heightScale);
+  buildTriangles(heightmapImage.get(), width, height, heightScale);
+  buildSmoothSurface(heightmapImage.get(), width, height, heightScale);
 
-      pointPositions.push_back((float)i / height - 0.5f);
-      pointPositions.push_back(h * heightScale);
-      pointPositions.push_back(-(float)j / width - 0.5f);
-
-      float gray = h / 255.0f;
-      pointColors.push_back(gray);
-      pointColors.push_back(gray);
-      pointColors.push_back(gray);
-      pointColors.push_back(1.0f); // alpha channel
-    }
-  }
-
-  // LINES
-
-  vector<float> linePositions;
-  vector<float> lineColors;
-
-  for (int i = 0; i < height; i++) {
-    for (int j = 0; j < width; j++) {
-      float h = heightmapImage->getPixel(j, i, 0);
-      float y = h * heightScale;
-      float x = (float)i / height - 0.5f;
-      float z = -(float)j / width - 0.5f;
-      float gray = h / 255.0f;
-
-      if (j + 1 < width) {
-        float h2 = heightmapImage->getPixel(j + 1, i, 0);
-        float y2 = h2 * heightScale;
-        float x2 = (float)i / height - 0.5f;
-        float z2 = -(float)(j + 1) / width - 0.5f;
-
-        linePositions.insert(linePositions.end(), { x, y, z, x2, y2, z2 });
-        lineColors.insert(lineColors.end(), { gray, gray, gray, 1.0f,
-                                              h2/255.0f, h2/255.0f, h2/255.0f, 1.0f });
-      }
-
-      if (i + 1 < height) {
-        float h2 = heightmapImage->getPixel(j, i + 1, 0);
-        float y2 = h2 * heightScale;
-        float x2 = (float)(i + 1) / height - 0.5f;
-        float z2 = -(float)j / width - 0.5f;
-
-        linePositions.insert(linePositions.end(), { x, y, z, x2, y2, z2 });
-        lineColors.insert(lineColors.end(), { gray, gray, gray, 1.0f,
-                                              h2/255.0f, h2/255.0f, h2/255.0f, 1.0f });
-      }
-    }
-  }
-
-  numLines = linePositions.size() / 3;
-
-  // TRIANGLES
-
-  vector<float> trianglePositions;
-  vector<float> triangleColors;
-
-  for (int i = 0; i < height - 1; i++) {
-    for (int j = 0; j < width - 1; j++) {
-      float h00 = heightmapImage->getPixel(j, i, 0);
-      float h01 = heightmapImage->getPixel(j + 1, i, 0);
-      float h10 = heightmapImage->getPixel(j, i + 1, 0);
-      float h11 = heightmapImage->getPixel(j + 1, i + 1, 0);
-
-      float x00 = (float)i / height - 0.5f;
-      float y00 = h00 * heightScale;
-      float z00 = -(float)j / width - 0.5f;
-
-      float x01 = (float)i / height - 0.5f;
-      float y01 = h01 * heightScale;
-      float z01 = -(float)(j + 1) / width - 0.5f;
-
-      float x10 = (float)(i + 1) / height - 0.5f;
-      float y10 = h10 * heightScale;
-      float z10 = -(float)j / width - 0.5f;
-
-      float x11 = (float)(i + 1) / height - 0.5f;
-      float y11 = h11 * heightScale;
-      float z11 = -(float)(j + 1) / width - 0.5f;
-
-      float g00 = h00 / 255.0f;
-      float g01 = h01 / 255.0f;
-      float g10 = h10 / 255.0f;
-      float g11 = h11 / 255.0f;
-
-      // triangle 1
-      trianglePositions.insert(
-        trianglePositions.end(),
-        { x00, y00, z00,
-          x10, y10, z10,
-          x01, y01, z01 }
-      );
-      triangleColors.insert(
-        triangleColors.end(),
-        { g00, g00, g00, 1.0f,
-          g10, g10, g10, 1.0f,
-          g01, g01, g01, 1.0f }
-      );
-
-      // triangle 2
-      trianglePositions.insert(
-        trianglePositions.end(),
-        { x10, y10, z10,
-          x11, y11, z11,
-          x01, y01, z01 }
-      );
-      triangleColors.insert(
-        triangleColors.end(),
-        { g10, g10, g10, 1.0f,
-          g11, g11, g11, 1.0f,
-          g01, g01, g01, 1.0f }
-      );
-    }
-  }
-
-  numTriangles = trianglePositions.size() / 3;
-
-  // gpu
-  // points
-  vboPointsPos.Gen(numPoints, 3, pointPositions.data(), GL_STATIC_DRAW);
-  vboPointsColor.Gen(numPoints, 4, pointColors.data(), GL_STATIC_DRAW);
-  vaoPoints.Gen();
-  vaoPoints.Bind();
-  vaoPoints.ConnectPipelineProgramAndVBOAndShaderVariable
-            (&pipelineProgram, &vboPointsPos, "position");
-  vaoPoints.ConnectPipelineProgramAndVBOAndShaderVariable
-            (&pipelineProgram, &vboPointsColor, "color");
-  // lines
-  vboLinesPos.Gen(numLines, 3, linePositions.data(), GL_STATIC_DRAW);
-  vboLinesColor.Gen(numLines, 4, lineColors.data(), GL_STATIC_DRAW);
-  vaoLines.Gen();
-  vaoLines.Bind();
-  vaoLines.ConnectPipelineProgramAndVBOAndShaderVariable
-            (&pipelineProgram, &vboLinesPos, "position");
-  vaoLines.ConnectPipelineProgramAndVBOAndShaderVariable
-            (&pipelineProgram, &vboLinesColor, "color");
-  // triangles
-  vboTrianglesPos.Gen(numTriangles, 3, trianglePositions.data(), GL_STATIC_DRAW);
-  vboTrianglesColor.Gen(numTriangles, 4, triangleColors.data(), GL_STATIC_DRAW);
-  vaoTriangles.Gen();
-  vaoTriangles.Bind();
-  vaoTriangles.ConnectPipelineProgramAndVBOAndShaderVariable
-            (&pipelineProgram, &vboTrianglesPos, "position");
-  vaoTriangles.ConnectPipelineProgramAndVBOAndShaderVariable
-            (&pipelineProgram, &vboTrianglesColor, "color");
-
+  // default scene
   terrainTranslate[0] = -0.5f;
   terrainTranslate[2] = -0.5f;
   terrainScale[0] = 5.0f;
@@ -683,4 +730,3 @@ int main(int argc, char *argv[])
   // Sink forever into the GLUT loop.
   glutMainLoop();
 }
-
