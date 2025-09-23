@@ -18,6 +18,15 @@
 #include <cstring>
 #include <memory>
 
+// additional includes for my new screenshot function
+#include <filesystem>
+#include <chrono>
+#include <iomanip>
+#include <sstream>
+#include <csignal>
+
+namespace fs = std::filesystem;
+
 #if defined(WIN32) || defined(_WIN32)
   #ifdef _DEBUG
     #pragma comment(lib, "glew32d.lib")
@@ -67,15 +76,71 @@ VBO vboVertices;
 VBO vboColors;
 VAO vao;
 
+// additional global variables
+int renderMode = 1; // 1=points, 2=lines, 
+                    // 3=triangles, 4=smoothing
+float scale = 1.0f;
+float exponent = 1.0f;
+
+// counters
+int numPoints, numLines, numTriangles;
+
+// additional VAOs and VBOs
+VAO vaoPoints, vaoLines, vaoTriangles;
+VBO vboPointsPos, vboPointsColor;
+VBO vboLinesPos, vboLinesColor;
+VBO vboTrianglesPos, vboTrianglesColor;
+
+VAO vaoSmooth;
+VBO vboCenter, vboLeft, vboRight, 
+    vboUp, vboDown, vboColor;
+
+// gamer control helper
+bool keyStates[256] = { false }; // true if key is pressed
+
+// additional global variables for screenshot
+string sessionFolder;
+
+string getCurrentTime(const char* format) {
+  auto now = chrono::system_clock::now();
+  time_t t = chrono::system_clock::to_time_t(now);
+  tm lt = *localtime(&t);
+  ostringstream oss;
+  oss << put_time(&lt, format);
+
+  auto ms = chrono::duration_cast<chrono::milliseconds>(now.time_since_epoch()) % 1000;
+  oss << '.' << setfill('0') << setw(3) << ms.count();
+
+  return oss.str();
+}
+
+string getScreenshotBaseDir() {
+  string baseDir = "screenshots";
+  if (!fs::exists(baseDir)) {
+    fs::create_directory(baseDir);
+  }
+  return baseDir;
+}
+
 // Write a screenshot to the specified filename.
-void saveScreenshot(const char * filename)
+void saveScreenshot() // const char * filename)
 {
-  std::unique_ptr<unsigned char[]> screenshotData = std::make_unique<unsigned char[]>(windowWidth * windowHeight * 3);
+  // std::unique_ptr<unsigned char[]> screenshotData = std::make_unique<unsigned char[]>(windowWidth * windowHeight * 3);
+  // glReadPixels(0, 0, windowWidth, windowHeight, GL_RGB, GL_UNSIGNED_BYTE, screenshotData.get());
+
+  // ImageIO screenshotImg(windowWidth, windowHeight, 3, screenshotData.get());
+
+  // if (screenshotImg.save(filename, ImageIO::FORMAT_JPEG) == ImageIO::OK)
+  //   cout << "File " << filename << " saved successfully." << endl;
+  // else cout << "Failed to save file " << filename << '.' << endl;
+
+  string timeStamp = getCurrentTime("%H%M%S_");
+  string filename = sessionFolder + "/" + timeStamp + ".jpg";
+
+  unique_ptr<unsigned char[]> screenshotData = make_unique<unsigned char[]>(windowWidth * windowHeight * 3);
   glReadPixels(0, 0, windowWidth, windowHeight, GL_RGB, GL_UNSIGNED_BYTE, screenshotData.get());
-
   ImageIO screenshotImg(windowWidth, windowHeight, 3, screenshotData.get());
-
-  if (screenshotImg.save(filename, ImageIO::FORMAT_JPEG) == ImageIO::OK)
+  if (screenshotImg.save(filename.c_str(), ImageIO::FORMAT_JPEG) == ImageIO::OK)
     cout << "File " << filename << " saved successfully." << endl;
   else cout << "Failed to save file " << filename << '.' << endl;
 }
@@ -84,7 +149,24 @@ void idleFunc()
 {
   // Do some stuff... 
   // For example, here, you can save the screenshots to disk (to make the animation).
+  float moveSpeed = 0.02f; // WASD
+  float zoomSpeed = 0.05f; // ZC
+  float rotateSpeed = 0.5f; // RF
 
+  if (keyStates['w']) terrainTranslate[1] -= moveSpeed;
+  if (keyStates['s']) terrainTranslate[1] += moveSpeed;
+  if (keyStates['a']) terrainTranslate[0] += moveSpeed;
+  if (keyStates['d']) terrainTranslate[0] -= moveSpeed;
+
+  if (keyStates['z']) terrainTranslate[2] -= zoomSpeed;
+  if (keyStates['c']) terrainTranslate[2] += zoomSpeed;
+
+  if (keyStates['r']) terrainRotate[0] += rotateSpeed;
+  if (keyStates['f']) terrainRotate[0] -= rotateSpeed;
+
+  if (keyStates['q']) terrainRotate[1] -= rotateSpeed;
+  if (keyStates['e']) terrainRotate[1] += rotateSpeed;
+  
   // Notify GLUT that it should call displayFunc.
   glutPostRedisplay();
 }
@@ -121,11 +203,6 @@ void mouseMotionDragFunc(int x, int y)
         terrainTranslate[0] += mousePosDelta[0] * 0.01f;
         terrainTranslate[1] -= mousePosDelta[1] * 0.01f;
       }
-      if (middleMouseButton)
-      {
-        // control z translation via the middle mouse button
-        terrainTranslate[2] += mousePosDelta[1] * 0.01f;
-      }
       break;
 
     // rotate the terrain
@@ -145,16 +222,8 @@ void mouseMotionDragFunc(int x, int y)
 
     // scale the terrain
     case SCALE:
-      if (leftMouseButton)
-      {
-        // control x,y scaling via the left mouse button
-        terrainScale[0] *= 1.0f + mousePosDelta[0] * 0.01f;
-        terrainScale[1] *= 1.0f - mousePosDelta[1] * 0.01f;
-      }
-      if (middleMouseButton)
-      {
-        // control z scaling via the middle mouse button
-        terrainScale[2] *= 1.0f - mousePosDelta[1] * 0.01f;
+      if (leftMouseButton) {
+        terrainTranslate[2] += mousePosDelta[1] * 0.01f;
       }
       break;
   }
@@ -190,23 +259,26 @@ void mouseButtonFunc(int button, int state, int x, int y)
     case GLUT_RIGHT_BUTTON:
       rightMouseButton = (state == GLUT_DOWN);
     break;
+
+    case 3: // mouse wheel up
+      terrainTranslate[2] -= 0.1f;
+    break;
+
+    case 4: // mouse wheel down
+      terrainTranslate[2] += 0.1f;
+    break;
   }
 
-  // Keep track of whether CTRL and SHIFT keys are pressed.
-  switch (glutGetModifiers())
-  {
-    case GLUT_ACTIVE_CTRL:
-      controlState = TRANSLATE;
-    break;
-
-    case GLUT_ACTIVE_SHIFT:
-      controlState = SCALE;
-    break;
-
-    // If CTRL and SHIFT are not pressed, we are in rotate mode.
-    default:
-      controlState = ROTATE;
-    break;
+  // new control logic just like Maya
+  int modifiers = glutGetModifiers();
+  if (modifiers & GLUT_ACTIVE_ALT) {
+    controlState = TRANSLATE;
+  }
+  else if (modifiers & GLUT_ACTIVE_CTRL) {
+    controlState = SCALE;
+  }
+  else {
+    controlState = ROTATE;
   }
 
   // Store the new mouse position.
@@ -214,23 +286,42 @@ void mouseButtonFunc(int button, int state, int x, int y)
   mousePos[1] = y;
 }
 
-void keyboardFunc(unsigned char key, int x, int y)
+// removed old keyboard function
+
+void keyboardDownFunc(unsigned char key, int x, int y)
 {
-  switch (key)
-  {
-    case 27: // ESC key
-      exit(0); // exit the program
-    break;
+  keyStates[key] = true;
 
-    case ' ':
-      cout << "You pressed the spacebar." << endl;
-    break;
+  if (key == 27) exit(0); // key esc
+  if (key == 'x') saveScreenshot();
 
-    case 'x':
-      // Take a screenshot.
-      saveScreenshot("screenshot.jpg");
-    break;
+  // display mode switching
+  if (key == '1') renderMode = 1; // points
+  if (key == '2') renderMode = 2; // lines
+  if (key == '3') renderMode = 3; // triangles
+  if (key == '4') renderMode = 4; // smoothing
+
+  // reset everything
+  if (key == 't') {
+    terrainRotate[0] = 0.0f;
+    terrainRotate[1] = 0.0f;
+    terrainRotate[2] = 0.0f;
+
+    terrainTranslate[0] = -0.5f;
+    terrainTranslate[1] = 0.0f;
+    terrainTranslate[2] = -0.5f;
+
+    terrainScale[0] = 5.0f;
+    terrainScale[1] = 5.0f;
+    terrainScale[2] = 5.0f;
+
+    cout << "Reset transformations." << endl;
   }
+}
+
+void keyboardUpFunc(unsigned char key, int x, int y)
+{
+  keyStates[key] = false;
 }
 
 void displayFunc()
@@ -243,12 +334,18 @@ void displayFunc()
   // Set up the camera position, focus point, and the up vector.
   matrix.SetMatrixMode(OpenGLMatrix::ModelView);
   matrix.LoadIdentity();
-  matrix.LookAt(0.0, 0.0, 5.0,
+  matrix.LookAt(0.0, 0.5, 2.0,
                 0.0, 0.0, 0.0,
                 0.0, 1.0, 0.0);
 
   // In here, you can do additional modeling on the object, such as performing translations, rotations and scales.
   // ...
+
+  matrix.Translate(terrainTranslate[0], terrainTranslate[1], terrainTranslate[2]);
+  matrix.Rotate(terrainRotate[0], 1.0f, 0.0f, 0.0f);
+  matrix.Rotate(terrainRotate[1], 0.0f, 1.0f, 0.0f);
+  matrix.Rotate(terrainRotate[2], 0.0f, 0.0f, 1.0f);
+  matrix.Scale(terrainScale[0], terrainScale[1], terrainScale[2]);
 
   // Read the current modelview and projection matrices from our helper class.
   // The matrices are only read here; nothing is actually communicated to OpenGL yet.
@@ -268,10 +365,21 @@ void displayFunc()
   pipelineProgram.SetUniformVariableMatrix4fv("modelViewMatrix", GL_FALSE, modelViewMatrix);
   pipelineProgram.SetUniformVariableMatrix4fv("projectionMatrix", GL_FALSE, projectionMatrix);
 
-  // Execute the rendering.
-  // Bind the VAO that we want to render. Remember, one object = one VAO. 
-  vao.Bind();
-  glDrawArrays(GL_TRIANGLES, 0, numVertices); // Render the VAO, by rendering "numVertices", starting from vertex 0.
+  // deleted original code
+
+  if (renderMode == 1) {
+    vaoPoints.Bind();
+    glDrawArrays(GL_POINTS, 0, numPoints);
+  } else if (renderMode == 2) {
+    vaoLines.Bind();
+    glDrawArrays(GL_LINES, 0, numLines);
+  } else if (renderMode == 3) {
+    vaoTriangles.Bind();
+    glDrawArrays(GL_TRIANGLES, 0, numTriangles);
+  } else if (renderMode == 4) {
+    vaoSmooth.Bind();
+    glDrawArrays(GL_TRIANGLES, 0, numTriangles * 3); // temp
+  }
 
   // Swap the double-buffers.
   glutSwapBuffers();
@@ -314,45 +422,179 @@ void initScene(int argc, char *argv[])
   // From that point on, exactly one pipeline program is bound at any moment of time.
   pipelineProgram.Bind();
 
-  // Prepare the triangle position and color data for the VBO. 
-  // The code below sets up a single triangle (3 vertices).
-  // The triangle will be rendered using GL_TRIANGLES (in displayFunc()).
+  // deleted hard-coded triangle
 
-  numVertices = 3; // This must be a global variable, so that we know how many vertices to render in glDrawArrays.
+  // new code
+  int width = heightmapImage->getWidth();
+  int height = heightmapImage->getHeight();
 
-  // Vertex positions.
-  std::unique_ptr<float[]> positions = std::make_unique<float[]>(numVertices * 3);
-  positions[0] = 0.0; positions[1] = 0.0; positions[2] = 0.0; // (x,y,z) coordinates of the first vertex
-  positions[3] = 0.0; positions[4] = 1.0; positions[5] = 0.0; // (x,y,z) coordinates of the second vertex
-  positions[6] = 1.0; positions[7] = 0.0; positions[8] = 0.0; // (x,y,z) coordinates of the third vertex
+  // POINTS aka VERTICES
 
-  // Vertex colors.
-  std::unique_ptr<float[]> colors = std::make_unique<float[]>(numVertices * 4);
-  colors[0] = 0.0; colors[1] = 0.0;  colors[2] = 1.0;  colors[3] = 1.0; // (r,g,b,a) channels of the first vertex
-  colors[4] = 1.0; colors[5] = 0.0;  colors[6] = 0.0;  colors[7] = 1.0; // (r,g,b,a) channels of the second vertex
-  colors[8] = 0.0; colors[9] = 1.0; colors[10] = 0.0; colors[11] = 1.0; // (r,g,b,a) channels of the third vertex
+  numPoints = width * height;
 
-  // Create the VBOs. 
-  // We make a separate VBO for vertices and colors. 
-  // This operation must be performed BEFORE we initialize any VAOs.
-  vboVertices.Gen(numVertices, 3, positions.get(), GL_STATIC_DRAW); // 3 values per position
-  vboColors.Gen(numVertices, 4, colors.get(), GL_STATIC_DRAW); // 4 values per color
+  vector<float> pointPositions;
+  vector<float> pointColors;
+  pointPositions.reserve(numPoints * 3);
+  pointColors.reserve(numPoints * 4);
 
-  // Create the VAOs. There is a single VAO in this example.
-  // Important: this code must be executed AFTER we created our pipeline program, and AFTER we set up our VBOs.
-  // A VAO contains the geometry for a single object. There should be one VAO per object.
-  // In this homework, "geometry" means vertex positions and colors. In homework 2, it will also include
-  // vertex normal and vertex texture coordinates for texture mapping.
-  vao.Gen();
+  float heightScale = 0.5f / 255.0f;
 
-  // Set up the relationship between the "position" shader variable and the VAO.
-  // Important: any typo in the shader variable name will lead to malfunction.
-  vao.ConnectPipelineProgramAndVBOAndShaderVariable(&pipelineProgram, &vboVertices, "position");
+  for (int i = 0; i < height; i++) {
+    for (int j = 0; j < width; j++) {
+      float h = heightmapImage->getPixel(j, i, 0);
 
-  // Set up the relationship between the "color" shader variable and the VAO.
-  // Important: any typo in the shader variable name will lead to malfunction.
-  vao.ConnectPipelineProgramAndVBOAndShaderVariable(&pipelineProgram, &vboColors, "color");
+      pointPositions.push_back((float)i / height - 0.5f);
+      pointPositions.push_back(h * heightScale);
+      pointPositions.push_back(-(float)j / width - 0.5f);
 
+      float gray = h / 255.0f;
+      pointColors.push_back(gray);
+      pointColors.push_back(gray);
+      pointColors.push_back(gray);
+      pointColors.push_back(1.0f); // alpha channel
+    }
+  }
+
+  // LINES
+
+  vector<float> linePositions;
+  vector<float> lineColors;
+
+  for (int i = 0; i < height; i++) {
+    for (int j = 0; j < width; j++) {
+      float h = heightmapImage->getPixel(j, i, 0);
+      float y = h * heightScale;
+      float x = (float)i / height - 0.5f;
+      float z = -(float)j / width - 0.5f;
+      float gray = h / 255.0f;
+
+      if (j + 1 < width) {
+        float h2 = heightmapImage->getPixel(j + 1, i, 0);
+        float y2 = h2 * heightScale;
+        float x2 = (float)i / height - 0.5f;
+        float z2 = -(float)(j + 1) / width - 0.5f;
+
+        linePositions.insert(linePositions.end(), { x, y, z, x2, y2, z2 });
+        lineColors.insert(lineColors.end(), { gray, gray, gray, 1.0f,
+                                              h2/255.0f, h2/255.0f, h2/255.0f, 1.0f });
+      }
+
+      if (i + 1 < height) {
+        float h2 = heightmapImage->getPixel(j, i + 1, 0);
+        float y2 = h2 * heightScale;
+        float x2 = (float)(i + 1) / height - 0.5f;
+        float z2 = -(float)j / width - 0.5f;
+
+        linePositions.insert(linePositions.end(), { x, y, z, x2, y2, z2 });
+        lineColors.insert(lineColors.end(), { gray, gray, gray, 1.0f,
+                                              h2/255.0f, h2/255.0f, h2/255.0f, 1.0f });
+      }
+    }
+  }
+
+  numLines = linePositions.size() / 3;
+
+  // TRIANGLES
+
+  vector<float> trianglePositions;
+  vector<float> triangleColors;
+
+  for (int i = 0; i < height - 1; i++) {
+    for (int j = 0; j < width - 1; j++) {
+      float h00 = heightmapImage->getPixel(j, i, 0);
+      float h01 = heightmapImage->getPixel(j + 1, i, 0);
+      float h10 = heightmapImage->getPixel(j, i + 1, 0);
+      float h11 = heightmapImage->getPixel(j + 1, i + 1, 0);
+
+      float x00 = (float)i / height - 0.5f;
+      float y00 = h00 * heightScale;
+      float z00 = -(float)j / width - 0.5f;
+
+      float x01 = (float)i / height - 0.5f;
+      float y01 = h01 * heightScale;
+      float z01 = -(float)(j + 1) / width - 0.5f;
+
+      float x10 = (float)(i + 1) / height - 0.5f;
+      float y10 = h10 * heightScale;
+      float z10 = -(float)j / width - 0.5f;
+
+      float x11 = (float)(i + 1) / height - 0.5f;
+      float y11 = h11 * heightScale;
+      float z11 = -(float)(j + 1) / width - 0.5f;
+
+      float g00 = h00 / 255.0f;
+      float g01 = h01 / 255.0f;
+      float g10 = h10 / 255.0f;
+      float g11 = h11 / 255.0f;
+
+      // triangle 1
+      trianglePositions.insert(
+        trianglePositions.end(),
+        { x00, y00, z00,
+          x10, y10, z10,
+          x01, y01, z01 }
+      );
+      triangleColors.insert(
+        triangleColors.end(),
+        { g00, g00, g00, 1.0f,
+          g10, g10, g10, 1.0f,
+          g01, g01, g01, 1.0f }
+      );
+
+      // triangle 2
+      trianglePositions.insert(
+        trianglePositions.end(),
+        { x10, y10, z10,
+          x11, y11, z11,
+          x01, y01, z01 }
+      );
+      triangleColors.insert(
+        triangleColors.end(),
+        { g10, g10, g10, 1.0f,
+          g11, g11, g11, 1.0f,
+          g01, g01, g01, 1.0f }
+      );
+    }
+  }
+
+  numTriangles = trianglePositions.size() / 3;
+
+  // gpu
+  // points
+  vboPointsPos.Gen(numPoints, 3, pointPositions.data(), GL_STATIC_DRAW);
+  vboPointsColor.Gen(numPoints, 4, pointColors.data(), GL_STATIC_DRAW);
+  vaoPoints.Gen();
+  vaoPoints.Bind();
+  vaoPoints.ConnectPipelineProgramAndVBOAndShaderVariable
+            (&pipelineProgram, &vboPointsPos, "position");
+  vaoPoints.ConnectPipelineProgramAndVBOAndShaderVariable
+            (&pipelineProgram, &vboPointsColor, "color");
+  // lines
+  vboLinesPos.Gen(numLines, 3, linePositions.data(), GL_STATIC_DRAW);
+  vboLinesColor.Gen(numLines, 4, lineColors.data(), GL_STATIC_DRAW);
+  vaoLines.Gen();
+  vaoLines.Bind();
+  vaoLines.ConnectPipelineProgramAndVBOAndShaderVariable
+            (&pipelineProgram, &vboLinesPos, "position");
+  vaoLines.ConnectPipelineProgramAndVBOAndShaderVariable
+            (&pipelineProgram, &vboLinesColor, "color");
+  // triangles
+  vboTrianglesPos.Gen(numTriangles, 3, trianglePositions.data(), GL_STATIC_DRAW);
+  vboTrianglesColor.Gen(numTriangles, 4, triangleColors.data(), GL_STATIC_DRAW);
+  vaoTriangles.Gen();
+  vaoTriangles.Bind();
+  vaoTriangles.ConnectPipelineProgramAndVBOAndShaderVariable
+            (&pipelineProgram, &vboTrianglesPos, "position");
+  vaoTriangles.ConnectPipelineProgramAndVBOAndShaderVariable
+            (&pipelineProgram, &vboTrianglesColor, "color");
+
+  terrainTranslate[0] = -0.5f;
+  terrainTranslate[2] = -0.5f;
+  terrainScale[0] = 5.0f;
+  terrainScale[1] = 5.0f;
+  terrainScale[2] = 5.0f;
+
+  glPointSize(2.0f); // make the points easier to see
 
   // Check for any OpenGL errors.
   std::cout << "GL error status is: " << glGetError() << std::endl;
@@ -377,6 +619,20 @@ int main(int argc, char *argv[])
   #else
     glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB | GLUT_DEPTH | GLUT_STENCIL);
   #endif
+
+  // screenshot folder
+
+  string baseDir = "screenshots";
+  fs::create_directories(baseDir);
+  string runStamp = getCurrentTime("%Y%m%d_%H%M%S");
+  string pictureName = string(argv[1]);
+  size_t pos = pictureName.find_last_of("/\\");
+  if (pos != string::npos) pictureName = pictureName.substr(pos + 1);
+
+  sessionFolder = baseDir + "/RUN_" + runStamp + "_" + pictureName;
+  fs::create_directories(sessionFolder);
+
+  cout << "Session screenshots at: " << sessionFolder << endl;
 
   glutInitWindowSize(windowWidth, windowHeight);
   glutInitWindowPosition(0, 0);  
@@ -404,7 +660,9 @@ int main(int argc, char *argv[])
   // callback for resizing the window
   glutReshapeFunc(reshapeFunc);
   // callback for pressing the keys on the keyboard
-  glutKeyboardFunc(keyboardFunc);
+  // glutKeyboardFunc(keyboardFunc);
+  glutKeyboardFunc(keyboardDownFunc);
+  glutKeyboardUpFunc(keyboardUpFunc);
 
   // init glew
   #ifdef __APPLE__
