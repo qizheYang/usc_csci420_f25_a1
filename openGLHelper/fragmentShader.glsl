@@ -1,10 +1,8 @@
-#version 150
+#version 330 core
 
-in vec4 col;
-out vec4 c;
+in vec4 vColor;
+out vec4 fragColor;
 
-void main()
-{
-  // compute the final pixel color
-  c = col;
+void main() {
+  fragColor = vColor;
 }

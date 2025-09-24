@@ -336,6 +336,11 @@ void keyboardDownFunc(unsigned char key, int x, int y)
 
     cout << "[DISPLAY] Reset" << endl;
   }
+
+  if (key == '+') { scale *= 2.0f; cout << "[SCALE] " << scale << endl; }
+  if (key == '-') { scale /= 2.0f; cout << "[SCALE] " << scale << endl; }
+  if (key == '9') { exponent *= 2.0f; cout << "[EXPONENT] " << exponent << endl; }
+  if (key == '0') { exponent /= 2.0f; cout << "[EXPONENT] " << exponent << endl; }
 }
 
 void keyboardUpFunc(unsigned char key, int x, int y)
@@ -557,6 +562,11 @@ void displayFunc()
   // Important: do not make a typo in the variable name below; otherwise, the program will malfunction.
   pipelineProgram.SetUniformVariableMatrix4fv("modelViewMatrix", GL_FALSE, modelViewMatrix);
   pipelineProgram.SetUniformVariableMatrix4fv("projectionMatrix", GL_FALSE, projectionMatrix);
+
+  // change mode
+  pipelineProgram.SetUniformVariablei("exponent", exponent);
+  pipelineProgram.SetUniformVariablef("scale", scale);
+  pipelineProgram.SetUniformVariablei("mode", renderMode == 4 ? 1 : 0);
 
   // deleted original code
 
