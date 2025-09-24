@@ -11,3 +11,11 @@ Grayscale coloring.
 # Additional Features
 
 Keyboard input to manipulate: WASD to move around, QE to turn left and right, RF to see up and down, and ZC to zoom in and out.
+
+Jet Color Map for smoothened version.
+
+GL Draw Elements for triangles.
+
+# Animation
+
+A python script is included in animation_helper folder and running it automatically converts the screenshots of latest run into an animation of 15 fps for 20 seconds.

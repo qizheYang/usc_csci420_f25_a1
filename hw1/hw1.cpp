@@ -108,6 +108,15 @@ bool keyStates[256] = { false }; // true if key is pressed
 // additional global variables for screenshot
 string sessionFolder;
 
+// element arrays and glDrawElements extra
+GLuint eboTriangles;
+int numTriangleIndices;
+
+// animation requirement helper variables
+bool recording = false;
+int recordedFrames = 0;
+chrono::steady_clock::time_point lastShotTime;
+
 string getCurrentTime(const char* format) {
   auto now = chrono::system_clock::now();
   time_t t = chrono::system_clock::to_time_t(now);
@@ -127,6 +136,28 @@ string getScreenshotBaseDir() {
     fs::create_directory(baseDir);
   }
   return baseDir;
+}
+
+// colored map
+// not completely implemented.. just draft
+void getHeightAndColor(ImageIO* image, int i, int j, float &h, 
+                       float &r, float &g, float &b) {
+  int bpp = image->getBytesPerPixel();
+
+  if (bpp == 1) {
+    // grayscale image
+    r = g = b = image->getPixel(i, j, 0);
+    h = r;
+  } else if (bpp == 3) {
+    r = image->getPixel(i, j, 0);
+    g = image->getPixel(i, j, 1);
+    b = image->getPixel(i, j, 2);
+    h = (r + g + b) / 3.0f; // averaged of 3 channels
+  }
+
+  r /= 255.0f;
+  g /= 255.0f;
+  b /= 255.0f;
 }
 
 // Write a screenshot to the specified filename.
@@ -174,6 +205,24 @@ void idleFunc()
   if (keyStates['q']) terrainRotate[1] -= rotateSpeed;
   if (keyStates['e']) terrainRotate[1] += rotateSpeed;
   
+  if (recording && recordedFrames < 300) {
+    auto now = chrono::steady_clock::now();
+    double elapsedMs = chrono::duration_cast<chrono::milliseconds>
+                                            (now - lastShotTime).count();
+    if (elapsedMs >= (1000.0 / 15.0)) { // fps =15
+      saveScreenshot();
+      recordedFrames++;
+      lastShotTime = now;
+      cout << "[ANIMATION] Recorded frame " 
+           << recordedFrames << "/300" << endl;
+      
+      if (recordedFrames >= 300) {
+        recording = false;
+        cout << "[ANIMATION] Recording stopped" << endl;
+      }
+    }
+  }
+
   // Notify GLUT that it should call displayFunc.
   glutPostRedisplay();
 }
@@ -341,6 +390,13 @@ void keyboardDownFunc(unsigned char key, int x, int y)
   if (key == '-') { scale /= 2.0f; cout << "[SCALE] " << scale << endl; }
   if (key == '9') { exponent *= 2.0f; cout << "[EXPONENT] " << exponent << endl; }
   if (key == '0') { exponent /= 2.0f; cout << "[EXPONENT] " << exponent << endl; }
+
+  if (key == 'g') {
+    recording = true;
+    recordedFrames = 0;
+    lastShotTime = chrono::steady_clock::now();
+    cout << "[ANIMATION] Recording started" << endl;
+  }
 }
 
 void keyboardUpFunc(unsigned char key, int x, int y)
@@ -423,6 +479,8 @@ void buildLines(ImageIO *heightmapImage, int width, int height, float heightScal
   vaoLines.ConnectPipelineProgramAndVBOAndShaderVariable(&pipelineProgram, &vboLinesColor, "color");
 }
 
+// original version of triangles
+/*
 void buildTriangles(ImageIO *heightmapImage, int width, int height, float heightScale)
 {
   vector<float> positions;
@@ -460,6 +518,70 @@ void buildTriangles(ImageIO *heightmapImage, int width, int height, float height
   vaoTriangles.Bind();
   vaoTriangles.ConnectPipelineProgramAndVBOAndShaderVariable(&pipelineProgram, &vboTrianglesPos, "position");
   vaoTriangles.ConnectPipelineProgramAndVBOAndShaderVariable(&pipelineProgram, &vboTrianglesColor, "color");
+}
+*/
+
+// new ebo version
+void buildTriangles(ImageIO *heightmapImage, int width, int height, float heightScale)
+{
+  std::vector<float> positions;
+  std::vector<float> colors;
+  std::vector<unsigned int> indices;
+
+  positions.reserve(width * height * 3);
+  colors.reserve(width * height * 4);
+
+  // --- Step 1: build vertex positions & colors ---
+  for (int i = 0; i < height; i++) {
+    for (int j = 0; j < width; j++) {
+      float h = heightmapImage->getPixel(i, j, 0);
+      float x = (float)i / height - 0.5f;
+      float y = h * heightScale;
+      float z = -(float)j / width - 0.5f;
+      positions.insert(positions.end(), {x, y, z});
+
+      float gray = h / 255.0f;
+      colors.insert(colors.end(), {gray, gray, gray, 1.0f});
+    }
+  }
+
+  // --- Step 2: build index array (two triangles per quad) ---
+  for (int i = 0; i < height - 1; i++) {
+    for (int j = 0; j < width - 1; j++) {
+      int v00 = i * width + j;         // top-left
+      int v01 = i * width + (j + 1);   // top-right
+      int v10 = (i + 1) * width + j;   // bottom-left
+      int v11 = (i + 1) * width + (j + 1); // bottom-right
+
+      // triangle 1: v00, v10, v01
+      indices.insert(indices.end(), { (unsigned int)v00,
+                                      (unsigned int)v10,
+                                      (unsigned int)v01 });
+
+      // triangle 2: v10, v11, v01
+      indices.insert(indices.end(), { (unsigned int)v10,
+                                      (unsigned int)v11,
+                                      (unsigned int)v01 });
+    }
+  }
+  numTriangleIndices = indices.size();
+
+  // --- Step 3: upload to GPU ---
+  vaoTriangles.Gen();
+  vaoTriangles.Bind();
+
+  vboTrianglesPos.Gen(positions.size() / 3, 3, positions.data(), GL_STATIC_DRAW);
+  vboTrianglesColor.Gen(colors.size() / 4, 4, colors.data(), GL_STATIC_DRAW);
+
+  vaoTriangles.ConnectPipelineProgramAndVBOAndShaderVariable(&pipelineProgram, &vboTrianglesPos, "position");
+  vaoTriangles.ConnectPipelineProgramAndVBOAndShaderVariable(&pipelineProgram, &vboTrianglesColor, "color");
+
+  glGenBuffers(1, &eboTriangles);
+  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, eboTriangles);
+  glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.size() * sizeof(unsigned int), indices.data(), GL_STATIC_DRAW);
+
+  // unbind VAO
+  glBindVertexArray(0);
 }
 
 void buildSmoothSurface(ImageIO *image, int width, int height, float heightScale)
@@ -599,7 +721,9 @@ void displayFunc()
     glDrawArrays(GL_LINES, 0, numLines);
   } else if (renderMode == 3) {
     vaoTriangles.Bind();
-    glDrawArrays(GL_TRIANGLES, 0, numTriangleVertices);
+    // glDrawArrays(GL_TRIANGLES, 0, numTriangleVertices);
+    glDrawElements(GL_TRIANGLES, numTriangleIndices, GL_UNSIGNED_INT, 0);
+    glBindVertexArray(0);
   } else if (renderMode == 4) {
     vaoSmooth.Bind();
     glDrawArrays(GL_TRIANGLES, 0, numSmoothVerts);
