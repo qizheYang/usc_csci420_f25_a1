@@ -9,33 +9,32 @@ def make_animation():
     gen_dir = base_dir / "gen"
     gen_dir.mkdir(exist_ok=True)
 
-    # Find the latest RUN_* folder
+    # get latest run
     run_folders = sorted(screenshots_dir.glob("RUN_*"), key=os.path.getmtime)
     if not run_folders:
         raise RuntimeError("No RUN_* folders found in screenshots/")
     src = run_folders[-1]  # latest
     print(f"📂 Using source folder: {src}")
 
-    # Find next animation_ver_i
+    # generate folder
     i = 0
     while (gen_dir / f"animation_ver_{i}").exists():
         i += 1
     out_dir = gen_dir / f"animation_ver_{i}"
     out_dir.mkdir(parents=True)
 
-    # Collect and sort images
     images = sorted(src.glob("*.jpg"))
     if not images:
         raise RuntimeError(f"No .jpg images found in {src}")
     if len(images) < 300:
         print(f"⚠️ Only {len(images)} images found, expected 300.")
 
-    # Copy & rename
+    # copy & rename to fit requirement
     for idx, img in enumerate(images[:300]):
         new_name = f"{idx:03d}.jpg"
         shutil.copy(img, out_dir / new_name)
 
-    # Make video
+    # make video
     video_path = out_dir / "animation.mp4"
     cmd = [
         "ffmpeg",
@@ -46,6 +45,8 @@ def make_animation():
         "-pix_fmt", "yuv420p",
         str(video_path)
     ]
+    # uses ffmpeg
+    # brew install ffmpeg
     print("▶️ Running ffmpeg...")
     subprocess.run(cmd, check=True)
 

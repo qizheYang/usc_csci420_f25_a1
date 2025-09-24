@@ -531,7 +531,6 @@ void buildTriangles(ImageIO *heightmapImage, int width, int height, float height
   positions.reserve(width * height * 3);
   colors.reserve(width * height * 4);
 
-  // --- Step 1: build vertex positions & colors ---
   for (int i = 0; i < height; i++) {
     for (int j = 0; j < width; j++) {
       float h = heightmapImage->getPixel(i, j, 0);
@@ -545,7 +544,6 @@ void buildTriangles(ImageIO *heightmapImage, int width, int height, float height
     }
   }
 
-  // --- Step 2: build index array (two triangles per quad) ---
   for (int i = 0; i < height - 1; i++) {
     for (int j = 0; j < width - 1; j++) {
       int v00 = i * width + j;         // top-left
@@ -566,7 +564,6 @@ void buildTriangles(ImageIO *heightmapImage, int width, int height, float height
   }
   numTriangleIndices = indices.size();
 
-  // --- Step 3: upload to GPU ---
   vaoTriangles.Gen();
   vaoTriangles.Bind();
 
