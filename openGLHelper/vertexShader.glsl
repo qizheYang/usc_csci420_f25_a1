@@ -21,28 +21,76 @@ uniform float exponent;
 // Outputs
 out vec4 vColor;
 
+// implement JetColorMap
+vec3 JetColorMap(float x)
+{
+  float r, g, b;
+  float a;
+
+  if (x < 0.0) {
+    return vec3(0.0, 0.0, 0.0);
+  }
+  else if (x < 0.125) {
+    a = x / 0.125;
+    r = 0.0;
+    g = 0.0;
+    b = 0.5 + 0.5 * a;
+  }
+  else if (x < 0.375) {
+    a = (x - 0.125) / 0.25;
+    r = 0.0;
+    g = a;
+    b = 1.0;
+  }
+  else if (x < 0.625) {
+    a = (x - 0.375) / 0.25;
+    r = a;
+    g = 1.0;
+    b = 1.0 - a;
+  }
+  else if (x < 0.875) {
+    a = (x - 0.625) / 0.25;
+    r = 1.0;
+    g = 1.0 - a;
+    b = 0.0;
+  }
+  else if (x <= 1.0) {
+    a = (x - 0.875) / 0.125;
+    r = 1.0 - 0.5 * a;
+    g = 0.0;
+    b = 0.0;
+  }
+  else {
+    r = 1.0;
+    g = 1.0;
+    b = 1.0;
+  }
+
+  return vec3(r, g, b);
+}
+
 void main()
 {
   vec3 pos;
   vec4 col;
 
   if (mode == 0) {
-    // === Normal modes (1, 2, 3) ===
     pos = position;
     col = color;
+
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+    vColor = col;
   } else {
-    // === Smooth mode (4) ===
     vec3 avgPos = (center + left + right + up + down) / 5.0;
 
     float y = avgPos.y;
-    float yTransformed = scale * pow(y, exponent);
+    float gray = clamp(y, 0.0, 1.0);
 
-    pos = vec3(avgPos.x, yTransformed, avgPos.z);
+    float adjustedY = scale * pow(y, exponent);
 
-    float c = clamp(pow(y, exponent), 0.0, 1.0);
-    col = vec4(c, c, c, 1.0);
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(avgPos.x, adjustedY, avgPos.z, 1.0);
+
+    vec3 jet = JetColorMap(gray);
+    vColor = vec4(jet, 1.0);
   }
-
-  gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
-  vColor = col;
 }

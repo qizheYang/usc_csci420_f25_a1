@@ -359,7 +359,7 @@ void buildPoints(ImageIO *heightmapImage, int width, int height, float heightSca
 
   for (int i = 0; i < height; i++) {
     for (int j = 0; j < width; j++) {
-      float h = heightmapImage->getPixel(j, i, 0);
+      float h = heightmapImage->getPixel(i, j, 0);
 
       positions.push_back((float)i / height - 0.5f);
       positions.push_back(h * heightScale);
@@ -385,14 +385,14 @@ void buildLines(ImageIO *heightmapImage, int width, int height, float heightScal
 
   for (int i = 0; i < height; i++) {
     for (int j = 0; j < width; j++) {
-      float h = heightmapImage->getPixel(j, i, 0);
+      float h = heightmapImage->getPixel(i, j, 0);
       float y = h * heightScale;
       float x = (float)i / height - 0.5f;
       float z = -(float)j / width - 0.5f;
       float gray = h / 255.0f;
 
       if (j + 1 < width) {
-        float h2 = heightmapImage->getPixel(j + 1, i, 0);
+        float h2 = heightmapImage->getPixel(i, j + 1, 0);
         float y2 = h2 * heightScale;
         float z2 = -(float)(j + 1) / width - 0.5f;
 
@@ -402,7 +402,7 @@ void buildLines(ImageIO *heightmapImage, int width, int height, float heightScal
       }
 
       if (i + 1 < height) {
-        float h2 = heightmapImage->getPixel(j, i + 1, 0);
+        float h2 = heightmapImage->getPixel(i + 1, j, 0);
         float y2 = h2 * heightScale;
         float x2 = (float)(i + 1) / height - 0.5f;
 
@@ -430,10 +430,10 @@ void buildTriangles(ImageIO *heightmapImage, int width, int height, float height
 
   for (int i = 0; i < height - 1; i++) {
     for (int j = 0; j < width - 1; j++) {
-      float h00 = heightmapImage->getPixel(j, i, 0);
-      float h01 = heightmapImage->getPixel(j + 1, i, 0);
-      float h10 = heightmapImage->getPixel(j, i + 1, 0);
-      float h11 = heightmapImage->getPixel(j + 1, i + 1, 0);
+      float h00 = heightmapImage->getPixel(i, j, 0);
+      float h01 = heightmapImage->getPixel(i, j + 1, 0);
+      float h10 = heightmapImage->getPixel(i + 1, j, 0);
+      float h11 = heightmapImage->getPixel(i + 1, j + 1, 0);
 
       float x00 = (float)i / height - 0.5f, y00 = h00 * heightScale, z00 = -(float)j / width - 0.5f;
       float x01 = (float)i / height - 0.5f, y01 = h01 * heightScale, z01 = -(float)(j + 1) / width - 0.5f;
@@ -485,7 +485,7 @@ void buildSmoothSurface(ImageIO *image, int width, int height, float heightScale
           int vi = verts[tri[t][k]][0];
           int vj = verts[tri[t][k]][1];
 
-          float h = image->getPixel(vj, vi, 0);
+          float h = image->getPixel(vi, vj, 0);
           float x = (float)vi / height - 0.5f;
           float y = h / 255.0f;  // raw height
           float z = -(float)vj / width - 0.5f;
@@ -497,7 +497,7 @@ void buildSmoothSurface(ImageIO *image, int width, int height, float heightScale
           auto neighbor = [&](int ni, int nj) {
             ni = std::max(0, std::min(height - 1, ni));
             nj = std::max(0, std::min(width - 1, nj));
-            float nh = image->getPixel(nj, ni, 0);
+            float nh = image->getPixel(ni, nj, 0);
             return vector<float>{
               (float)ni / height - 0.5f,
               nh / 255.0f,
