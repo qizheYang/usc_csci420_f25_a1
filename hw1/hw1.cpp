@@ -466,45 +466,65 @@ void buildSmoothSurface(ImageIO *image, int width, int height, float heightScale
 {
   vector<float> centers, lefts, rights, ups, downs, colors;
 
-  for (int i = 0; i < height; i++) {
-    for (int j = 0; j < width; j++) {
-      float h = image->getPixel(j, i, 0);
-      float y = h * heightScale;
-      float x = (float)i / height - 0.5f;
-      float z = -(float)j / width - 0.5f;
-      float gray = h / 255.0f;
-
-      // Current vertex
-      centers.insert(centers.end(), { x, y, z });
-      colors.insert(colors.end(), { gray, gray, gray, 1.0f });
-
-      // Neighbor function
-      auto neighbor = [&](int ni, int nj) {
-        ni = std::max(0, std::min(height - 1, ni));
-        nj = std::max(0, std::min(width - 1, nj));
-        float nh = image->getPixel(nj, ni, 0);
-        return vector<float>{
-          (float)ni / height - 0.5f,
-          nh * heightScale,
-          -(float)nj / width - 0.5f
-        };
+  for (int i = 0; i < height - 1; i++) {
+    for (int j = 0; j < width - 1; j++) {
+      int verts[4][2] = {
+        {i, j},     // bottom-left
+        {i + 1, j}, // top-left
+        {i, j + 1}, // bottom-right
+        {i + 1, j + 1} // top-right
       };
 
-      auto L = neighbor(i, j - 1);
-      auto R = neighbor(i, j + 1);
-      auto U = neighbor(i - 1, j);
-      auto D = neighbor(i + 1, j);
+      int tri[2][3] = {
+        {0, 1, 2},
+        {1, 3, 2}
+      };
 
-      lefts.insert(lefts.end(), L.begin(), L.end());
-      rights.insert(rights.end(), R.begin(), R.end());
-      ups.insert(ups.end(), U.begin(), U.end());
-      downs.insert(downs.end(), D.begin(), D.end());
+      for (int t = 0; t < 2; t++) {
+        for (int k = 0; k < 3; k++) {
+          int vi = verts[tri[t][k]][0];
+          int vj = verts[tri[t][k]][1];
+
+          float h = image->getPixel(vj, vi, 0);
+          float x = (float)vi / height - 0.5f;
+          float y = h / 255.0f;  // raw height
+          float z = -(float)vj / width - 0.5f;
+          centers.insert(centers.end(), {x, y, z});
+
+          float gray = h / 255.0f;
+          colors.insert(colors.end(), {gray, gray, gray, 1.0f});
+
+          auto neighbor = [&](int ni, int nj) {
+            ni = std::max(0, std::min(height - 1, ni));
+            nj = std::max(0, std::min(width - 1, nj));
+            float nh = image->getPixel(nj, ni, 0);
+            return vector<float>{
+              (float)ni / height - 0.5f,
+              nh / 255.0f,
+              -(float)nj / width - 0.5f
+            };
+          };
+
+          // left = (vi, vj-1)
+          auto L = neighbor(vi, vj - 1);
+          // right = (vi, vj+1)
+          auto R = neighbor(vi, vj + 1);
+          // up = (vi-1, vj)
+          auto U = neighbor(vi - 1, vj);
+          // down = (vi+1, vj)
+          auto D = neighbor(vi + 1, vj);
+
+          lefts.insert(lefts.end(), L.begin(), L.end());
+          rights.insert(rights.end(), R.begin(), R.end());
+          ups.insert(ups.end(), U.begin(), U.end());
+          downs.insert(downs.end(), D.begin(), D.end());
+        }
+      }
     }
   }
 
   numSmoothVerts = centers.size() / 3;
 
-  // Upload to GPU
   vboCenter.Gen(numSmoothVerts, 3, centers.data(), GL_STATIC_DRAW);
   vboLeft.Gen(numSmoothVerts, 3, lefts.data(), GL_STATIC_DRAW);
   vboRight.Gen(numSmoothVerts, 3, rights.data(), GL_STATIC_DRAW);
@@ -564,8 +584,9 @@ void displayFunc()
   pipelineProgram.SetUniformVariableMatrix4fv("projectionMatrix", GL_FALSE, projectionMatrix);
 
   // change mode
-  pipelineProgram.SetUniformVariablei("exponent", exponent);
+  pipelineProgram.SetUniformVariablef("exponent", exponent);
   pipelineProgram.SetUniformVariablef("scale", scale);
+
   pipelineProgram.SetUniformVariablei("mode", renderMode == 4 ? 1 : 0);
 
   // deleted original code
