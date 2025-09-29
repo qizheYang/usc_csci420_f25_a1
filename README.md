@@ -47,3 +47,7 @@ Same as above.
 ### Render linearly proportional to height
 
 Higher is brighter, lower is dimmer.
+
+### Control with Mouse
+
+`GLUT_ACTIVE_CTRL` and `GLUT_ACTIVE_ALT` does not work on my computer, so I actually deleted these two functions and instead control rotate, translate, and scale with left button, middle button, and right button.
