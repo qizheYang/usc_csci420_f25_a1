@@ -155,6 +155,7 @@ void randomHeight(ImageIO* heightmapImage) {
       float h = heightBuf[idx];
 
       // neighbor average
+      // avoid neighbors being sharp
       float neighborSum = 0; int count = 0;
       for (int di = -1; di <= 1; di++) {
         for (int dj = -1; dj <= 1; dj++) {
@@ -293,7 +294,7 @@ void idleFunc()
       ylast = now;
     }
 
-    if (timePassed >= 5000.0f) {
+    if (timePassed >= 20000.0f) { // for 20s
       mody = false;
       cout << "[RANDOM] End!" << endl;
     }
@@ -477,6 +478,18 @@ void keyboardDownFunc(unsigned char key, int x, int y)
   if (key == 'y') {
     if (renderMode == 4 && !mody) {
       mody = true;
+      ystart = chrono::steady_clock::now();
+      ylast = ystart;
+      cout << "[RANDOM] Height changing!" << endl;
+    }
+  }
+
+  if (key == 'p') {
+    if (renderMode == 4 && !mody && !recording) {
+      recording = mody = true;
+      recordedFrames = 0;
+      lastShotTime = chrono::steady_clock::now();
+      cout << "[ANIMATION] Recording started" << endl;
       ystart = chrono::steady_clock::now();
       ylast = ystart;
       cout << "[RANDOM] Height changing!" << endl;

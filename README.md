@@ -26,7 +26,8 @@ A python script is included in animation_helper folder and running it automatica
 
 ## To view all run results
 
-Please see screenshots folder in /hw1.
+Please see screenshots folder in /hw1. To have 300 consecutive screenshots of 15fps, press `g`. To single shot, press `x` (default).
+To have the random height and screenshot at same time, press `p`.
 
 ## To view animation results
 
@@ -56,7 +57,7 @@ Higher is brighter, lower is dimmer.
 
 ### Random Height
 
-Unfortunately, this changing algorithm is a high time complexity, meaning it might run slower than designed (0.01s / frame) if the input is big. It runs smoothly for the spiral.jpg in my testing.
+Unfortunately, this changing algorithm is a high time complexity, meaning it might run slower than designed (0.01s / frame) if the input is big. It runs smoothly for the spiral.jpg in my testing. To activate, press `y`.
 
 ### Coding
 
