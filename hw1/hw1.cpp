@@ -604,7 +604,7 @@ void buildSmoothSurface(ImageIO *image, int width, int height, float heightScale
           int vi = verts[tri[t][k]][0];
           int vj = verts[tri[t][k]][1];
 
-          float h = image->getPixel(vi, vj, 0);
+          float h = image->getPixel(vi, vj, 0) * 1.0f;
           float x = (float)vi / height - 0.5f;
           float y = h / 255.0f;  // raw height
           float z = -(float)vj / width - 0.5f;
@@ -779,7 +779,7 @@ void initScene(int argc, char *argv[])
   // new code
   int width = heightmapImage->getWidth();
   int height = heightmapImage->getHeight();
-  float heightScale = 0.5f / 255.0f;
+  float heightScale = 0.001f;
 
   buildPoints(heightmapImage.get(), width, height, heightScale);
   buildLines(heightmapImage.get(), width, height, heightScale);
