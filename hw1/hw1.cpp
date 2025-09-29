@@ -25,6 +25,11 @@
 #include <sstream>
 #include <csignal>
 
+// randomHeight
+#include <random>
+
+std::default_random_engine rng(std::random_device{}());
+
 namespace fs = std::filesystem;
 
 #if defined(WIN32) || defined(_WIN32)
@@ -116,6 +121,62 @@ int numTriangleIndices;
 bool recording = false;
 int recordedFrames = 0;
 chrono::steady_clock::time_point lastShotTime;
+
+// compatibility, should actually be in .h file
+// .h DNE
+void buildSmoothSurface(ImageIO *image, int width, int height, float heightScale);
+
+/*
+A fun function.
+Should resemble some audio responsive wallpapers
+on wallpaper engines though it does not 
+respond to any audio input.
+*/
+vector<float> heightBuf;
+int imgWidth, imgHeight;
+bool mody = false;
+chrono::steady_clock::time_point ystart, ylast;
+
+void randomHeight(ImageIO* heightmapImage) {
+  if (renderMode != 4) return; // only for smoothing mode
+
+  float minH = 255, maxH = 0;
+  for (float h : heightBuf) {
+    minH = min(minH, h);
+    maxH = max(maxH, h);
+  }
+
+  uniform_int_distribution<int> dist(-10, 10);
+  vector<float> newHeights(heightBuf.size());
+
+  for (int i = 0; i < imgHeight; i++) {
+    for (int j = 0; j < imgWidth; j++) {
+      int idx = i * imgWidth + j;
+      float h = heightBuf[idx];
+
+      // neighbor average
+      float neighborSum = 0; int count = 0;
+      for (int di = -1; di <= 1; di++) {
+        for (int dj = -1; dj <= 1; dj++) {
+          int ni = i + di, nj = j + dj;
+          if (ni >= 0 && ni < imgHeight && nj >= 0 && nj < imgWidth) {
+            neighborSum += heightBuf[ni * imgWidth + nj];
+            count++;
+          }
+        }
+      }
+      float avg = neighborSum / count;
+
+      float newH = 0.7f * h + 0.3f * avg + dist(rng);
+      newH = std::max(minH, std::min(maxH, newH));
+      newHeights[idx] = newH;
+    }
+  }
+
+  heightBuf.swap(newHeights);
+
+  buildSmoothSurface(nullptr, imgWidth, imgHeight, 0.001f);
+}
 
 string getCurrentTime(const char* format) {
   auto now = chrono::system_clock::now();
@@ -220,6 +281,21 @@ void idleFunc()
         recording = false;
         cout << "[ANIMATION] Recording stopped" << endl;
       }
+    }
+  }
+
+  if (mody) {
+    auto now = chrono::steady_clock::now();
+    double timePassed = chrono::duration_cast<chrono::milliseconds>(now - ystart).count();
+    double timeFromLast = chrono::duration_cast<chrono::milliseconds>(now - ylast).count();
+    if (timeFromLast >= 10.0f) { // change every 0.01s
+      randomHeight(nullptr);
+      ylast = now;
+    }
+
+    if (timePassed >= 5000.0f) {
+      mody = false;
+      cout << "[RANDOM] End!" << endl;
     }
   }
 
@@ -396,6 +472,15 @@ void keyboardDownFunc(unsigned char key, int x, int y)
     recordedFrames = 0;
     lastShotTime = chrono::steady_clock::now();
     cout << "[ANIMATION] Recording started" << endl;
+  }
+
+  if (key == 'y') {
+    if (renderMode == 4 && !mody) {
+      mody = true;
+      ystart = chrono::steady_clock::now();
+      ylast = ystart;
+      cout << "[RANDOM] Height changing!" << endl;
+    }
   }
 }
 
@@ -604,7 +689,8 @@ void buildSmoothSurface(ImageIO *image, int width, int height, float heightScale
           int vi = verts[tri[t][k]][0];
           int vj = verts[tri[t][k]][1];
 
-          float h = image->getPixel(vi, vj, 0) * 1.0f;
+          // float h = image->getPixel(vi, vj, 0) * 1.0f;
+          float h = heightBuf[vi * imgWidth + vj];
           float x = (float)vi / height - 0.5f;
           float y = h / 255.0f;  // raw height
           float z = -(float)vj / width - 0.5f;
@@ -616,7 +702,8 @@ void buildSmoothSurface(ImageIO *image, int width, int height, float heightScale
           auto neighbor = [&](int ni, int nj) {
             ni = std::max(0, std::min(height - 1, ni));
             nj = std::max(0, std::min(width - 1, nj));
-            float nh = image->getPixel(ni, nj, 0);
+            // float nh = image->getPixel(ni, nj, 0);
+            float nh = heightBuf[ni * imgWidth + nj];
             return vector<float>{
               (float)ni / height - 0.5f,
               nh / 255.0f,
@@ -738,6 +825,18 @@ void initScene(int argc, char *argv[])
   {
     cout << "Error reading image " << argv[1] << "." << endl;
     exit(EXIT_FAILURE);
+  }
+
+  imgWidth = heightmapImage->getWidth();
+  imgHeight = heightmapImage->getHeight();
+  cout << "Loaded image " << argv[1] << " of size "
+       << imgWidth << " x " << imgHeight << endl;
+  
+  heightBuf.resize(imgWidth * imgHeight);
+  for (int i = 0; i < imgHeight; i++) {
+    for (int j = 0; j < imgWidth; j++) {
+      heightBuf[i * imgWidth + j] = heightmapImage->getPixel(i, j, 0);
+    }
   }
 
   // Set the background color.

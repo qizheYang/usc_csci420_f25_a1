@@ -16,9 +16,11 @@ Jet Color Map for smoothened version.
 
 GL Draw Elements for triangles.
 
+Inspired by the `earthquake` thing in class and the audio responsive wallpapers on Wallpaper Engine, made a random changing terrain thing that randomly changes the height of any pixel within a safe range (calculated from its original and neighbors).
+
 # Animation
 
-A python script is included in animation_helper folder and running it automatically converts the screenshots of latest run into an animation of 15 fps for 20 seconds. Please go to ```~/usc_csci420_f25_a1/animation_helper``` to see.
+A python script is included in animation_helper folder and running it automatically converts the screenshots of latest run into an animation of 15 fps for 20 seconds. Please go to ```~/usc_csci420_f25_a1/animation_helper/animation_ver_i``` where i is the biggest one (obviously sorted to the last) to see. The animation file is called animation.mp4.
 
 # For Grading
 
@@ -51,3 +53,11 @@ Higher is brighter, lower is dimmer.
 ### Control with Mouse
 
 `GLUT_ACTIVE_CTRL` and `GLUT_ACTIVE_ALT` does not work on my computer, so I actually deleted these two functions and instead control rotate, translate, and scale with left button, middle button, and right button.
+
+### Random Height
+
+Unfortunately, this changing algorithm is a high time complexity, meaning it might run slower than designed (0.01s / frame) if the input is big. It runs smoothly for the spiral.jpg in my testing.
+
+### Coding
+
+Unfortunately, the code is a bit messed because functions are implemented one by one. Certain global variables are added later for newer functions that could sometimes replace original variables in function scope.
